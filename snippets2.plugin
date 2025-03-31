@@ -1,0 +1,9 @@
+[Plugin]
+Module=snippets2
+IAge=3
+Name=Snippets 2
+Description=Code snippets
+Authors=Florian Evaldsson <florian.evaldsson@telia.com>
+Copyright=Copyright @ 2025 Florian Evaldsson
+Version=48.1
+
