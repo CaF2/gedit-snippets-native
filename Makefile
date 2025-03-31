@@ -24,7 +24,7 @@ NAME = libsnippets2
 
 ARGS =
 
-SRCS = gedit-snippets.c gedit-snippets-configure-window.c
+SRCS = gedit-snippets.c gedit-snippets-configure-window.c gedit-snippets-configuration.c
 
 OBJS = $(SRCS:.c=.c.o)
 
@@ -38,32 +38,28 @@ LDFLAGS = $(if $(PKG_CONF),$(shell pkg-config --libs $(PKG_CONF))) -shared
 #CFLAGS += $(if $(NO_ASAN),,-fsanitize=address)
 #LDFLAGS += $(if $(NO_ASAN),,-fsanitize=address)
 
-###########
+RUN_COMMAND = gedit -s test.c
 
+###########
 
 all: $(NAME).so
 
 $(NAME).so: $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDFLAGS)
 
-#all: $(NAME)
-
-$(NAME): $(OBJS)
-	$(CC) $^ -o $@ $(LDFLAGS)
-
 %.c.o: %.c
 	$(CC) $< -c -o $@ $(CFLAGS)
 	
 run: all
-	./$(NAME) $(ARGS)
+	$(RUN_COMMAND)
 	
 gdb: all
-	gdb --args ./$(NAME) $(ARGS)
+	gdb --args $(RUN_COMMAND)
 
 lldb: all
-	lldb -- ./$(NAME) $(ARGS)
+	lldb -- $(RUN_COMMAND)
 	
 valgrind: all
-	valgrind --leak-check=yes --leak-check=full --show-leak-kinds=all -v --log-file="$(NAME).valgrind.log" ./$(NAME) $(ARGS)
+	valgrind --leak-check=yes --leak-check=full --show-leak-kinds=all -v --log-file="$(NAME).valgrind.log" $(RUN_COMMAND)
 
 -include $(OBJS:.o=.d)

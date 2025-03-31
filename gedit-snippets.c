@@ -29,28 +29,10 @@ freely, subject to the following restrictions:
 #include "gedit-snippets.h"
 
 #include "gedit-snippets-configure-window.h"
+#include "gedit-snippets-configuration.h"
 
 static void gedit_app_activatable_iface_init(GeditAppActivatableInterface *iface);
 static void gedit_window_activatable_iface_init(GeditWindowActivatableInterface *iface);
-
-typedef struct SnippetTranslation
-{
-	char *from;
-	char *to;
-}SnippetTranslation;
-
-typedef struct SnippetBlock
-{
-	size_t str_len;
-	SnippetTranslation *nodes;
-}SnippetBlock;
-
-SnippetBlock GLOBAL_SNIPPETS[]={
-	{3,(SnippetTranslation[]){{"prl","fprintf(stdout,\"%s:%d \\n\",__FILE__,__LINE__,);"},{"err","fprintf(stderr,\"%s:%d \\n\",__FILE__,__LINE__,);"},{NULL,NULL}}},
-	{8,(SnippetTranslation[]){{"std_head","typedef struct abc{}abc;"},{NULL,NULL}}}
-};
-
-#define GLOBAL_SNIPPETS_LEN (sizeof(GLOBAL_SNIPPETS)/sizeof(GLOBAL_SNIPPETS[0]))
 
 struct _GeditSnippetsPluginPrivate
 {
@@ -96,6 +78,60 @@ static int get_language_definitions(GtkTextBuffer *buffer, const char **block_la
 	}
 }
 
+static void handle_first_insertion(GtkTextBuffer *buffer, GtkTextIter *start, const char *const insertion)
+{
+	GMatchInfo *match_info;
+	GRegex *regex;
+	GError *error = NULL;
+	const char *pattern = "\\$([0-9]+|<[^>]*>|{[^}]*})";
+
+	regex = g_regex_new(pattern, G_REGEX_EXTENDED, 0, &error);
+	if (!regex)
+	{
+		fprintf(stderr, "Regex compilation failed: %s\n", error->message);
+		g_error_free(error);
+		return;
+	}
+
+	g_autofree char *result = g_regex_replace(regex, insertion, -1, 0, "", 0, &error);
+
+	if (error)
+	{
+		fprintf(stderr, "Regex replacement failed: %s\n", error->message);
+		g_error_free(error);
+		return;
+	}
+
+	if (g_regex_match(regex, insertion, 0, &match_info))
+	{
+		const char *cursor = insertion;
+		while (g_match_info_matches(match_info))
+		{
+			g_autofree char *match = g_match_info_fetch(match_info, 0);
+			gint start, end;
+			g_match_info_fetch_pos(match_info, 0, &start, &end);
+
+			// Print text before match
+			printf("Text: %.*s\n", start - (cursor - insertion), cursor);
+			printf("Match: %s\n", match);
+
+			cursor = insertion + end;
+			g_match_info_next(match_info, NULL);
+		}
+
+		// Print remaining text after last match
+		if (*cursor)
+		{
+			printf("Text: %s\n", cursor);
+		}
+	}
+
+	g_match_info_free(match_info);
+	g_regex_unref(regex);
+
+	gtk_text_buffer_insert(buffer, start, result, -1);
+}
+
 static gboolean on_key_press_event(GtkWidget *widget, GdkEventKey *event, gpointer user_data)
 {
 	if (event->keyval == GDK_KEY_Tab)
@@ -107,27 +143,32 @@ static gboolean on_key_press_event(GtkWidget *widget, GdkEventKey *event, gpoint
 		/* Get the current cursor position */
 		gtk_text_buffer_get_iter_at_mark(buffer, &iter, gtk_text_buffer_get_insert(buffer));
 		
-		for(int i=0;i<GLOBAL_SNIPPETS_LEN;i++)
+		if(GLOBAL_SNIPPETS)
 		{
-			/* Move start to the beginning of the word before the cursor */
-			gtk_text_iter_assign(&start, &iter);
-			gtk_text_iter_backward_chars(&start,GLOBAL_SNIPPETS[i].str_len);
-
-			/* Extract the word before the cursor */
-			g_autofree gchar *word = gtk_text_buffer_get_text(buffer, &start, &iter, FALSE);
-			
-			for(SnippetTranslation *tmp=GLOBAL_SNIPPETS[i].nodes;tmp->from;tmp++)
+			for(int i=0;i<GLOBAL_SNIPPETS->len;i++)
 			{
-				if (g_strcmp0(word, tmp->from) == 0)
+				SnippetBlock *sblk=g_ptr_array_index(GLOBAL_SNIPPETS,i);
+				/* Move start to the beginning of the word before the cursor */
+				gtk_text_iter_assign(&start, &iter);
+				gtk_text_iter_backward_chars(&start,sblk->str_len);
+
+				/* Extract the word before the cursor */
+				g_autofree gchar *word = gtk_text_buffer_get_text(buffer, &start, &iter, FALSE);
+				
+				for(int j=0;j<sblk->nodes->len;j++)
 				{
-					/* Replace "std_head" with the snippet */
-					gtk_text_buffer_begin_user_action(buffer);
-					
-					gtk_text_buffer_delete(buffer, &start, &iter);
-					gtk_text_buffer_insert(buffer, &start, tmp->to, -1);
-					
-					gtk_text_buffer_end_user_action(buffer);
-					return TRUE;  // Stop event propagation
+					SnippetTranslation *tmp=g_ptr_array_index(sblk->nodes,j);
+					if (g_strcmp0(word, tmp->from) == 0)
+					{
+						/* Replace "std_head" with the snippet */
+						gtk_text_buffer_begin_user_action(buffer);
+						
+						gtk_text_buffer_delete(buffer, &start, &iter);
+						handle_first_insertion(buffer, &start, tmp->to);
+						
+						gtk_text_buffer_end_user_action(buffer);
+						return TRUE;  // Stop event propagation
+					}
 				}
 			}
 		}
@@ -283,6 +324,8 @@ static void gedit_snippets_plugin_class_init(GeditSnippetsPluginClass *klass)
 	object_class->finalize = gedit_snippets_plugin_finalize;
 	object_class->set_property = gedit_snippets_plugin_set_property;
 	object_class->get_property = gedit_snippets_plugin_get_property;
+	
+	load_configuration();
 
 	g_object_class_override_property(object_class, PROP_WINDOW, "window");
 	g_object_class_override_property(object_class, PROP_APP, "app");

@@ -19,16 +19,31 @@ freely, subject to the following restrictions:
 */
 #pragma once
 
-#include <gtk/gtk.h>
+#include <glib.h>
 
 G_BEGIN_DECLS
 
-typedef struct {
-	GtkWidget *treeview;
-	GtkWidget *textview;
-	GtkListStore *store;
-} SnippetDialogData;
+typedef struct SnippetTranslation
+{
+	char *from;
+	char *to;
+}SnippetTranslation;
 
-void create_snippet_dialog(GtkWidget *parent);
+typedef struct SnippetBlock
+{
+	size_t str_len;
+	GPtrArray *nodes; ///< SnippetTranslation
+}SnippetBlock;
+
+int load_configuration();
+
+extern GPtrArray *GLOBAL_SNIPPETS;
+
+//static SnippetBlock GLOBAL_SNIPPETS[]={
+//	{3,(SnippetTranslation[]){{"prl","fprintf(stdout,\"%s:%d \\n\",__FILE__,__LINE__,);"},{"err","fprintf(stderr,\"%s:%d \\n\",__FILE__,__LINE__,);"},{NULL,NULL}}},
+//	{8,(SnippetTranslation[]){{"std_head","typedef struct abc{}abc;"},{NULL,NULL}}}
+//};
+//
+//#define GLOBAL_SNIPPETS_LEN (sizeof(GLOBAL_SNIPPETS)/sizeof(GLOBAL_SNIPPETS[0]))
 
 G_END_DECLS
