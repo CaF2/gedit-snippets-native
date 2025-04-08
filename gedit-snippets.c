@@ -218,10 +218,10 @@ static void on_tab_changed(GeditWindow *window, gpointer user_data)
 	GeditView *view = gedit_window_get_active_view(window);
 	if (view)
 	{
-		void *is_loaded=g_object_get_data(G_OBJECT(window), "sl");
+		void *is_loaded=g_object_get_data(G_OBJECT(view), "sl");
 		if(is_loaded==NULL)
 		{
-			g_object_set_data(G_OBJECT(window), "sl", "y");
+			g_object_set_data(G_OBJECT(view), "sl", "y");
 			// Ensure each new tab gets the key-press-event handler
 			g_signal_connect(view, "key-press-event", G_CALLBACK(on_key_press_event), user_data);
 		}
