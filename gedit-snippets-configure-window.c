@@ -18,6 +18,7 @@ freely, subject to the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 */
 #include "gedit-snippets-configure-window.h"
+#include "gedit-snippets-configuration.h"
 
 static void on_snippet_selected(GtkTreeSelection *selection, gpointer user_data)
 {
@@ -126,6 +127,34 @@ void create_snippet_dialog(GtkWidget *parent)
 	textview = gtk_text_view_new();
 	data->textview = textview;
 	gtk_container_add(GTK_CONTAINER(scrolled_window), textview);
+
+	if(GLOBAL_SNIPPETS)
+	{
+		for(int i=0;i<GLOBAL_SNIPPETS->len;i++)
+		{
+			SnippetBlock *sblk=g_ptr_array_index(GLOBAL_SNIPPETS,i);
+			
+			for(int j=0;j<sblk->nodes->len;j++)
+			{
+				SnippetTranslation *tmp=g_ptr_array_index(sblk->nodes,j);
+				
+				g_autoptr(GString) label_string=g_string_sized_new(10);
+				
+				for(int k=0;k<tmp->programming_languages->len;k++)
+				{
+					const char *langauage=g_ptr_array_index(tmp->programming_languages,k);
+					
+					g_string_append_printf(label_string,"%s%s",k==0?"":",",langauage);
+				}
+				
+				g_string_append_printf(label_string,": %s",tmp->from);
+				
+				GtkTreeIter iter;
+				gtk_list_store_append(data->store, &iter);
+				gtk_list_store_set(data->store, &iter, 0, label_string->str, 1, tmp->to, -1);
+			}
+		}
+	}
 
 	// Connect signals
 	g_signal_connect(selection, "changed", G_CALLBACK(on_snippet_selected), data);

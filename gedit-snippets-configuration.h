@@ -29,6 +29,7 @@ typedef struct SnippetTranslation
 	char *from;
 	char *to;
 	GPtrArray *programming_languages;
+	char *filename;
 }SnippetTranslation;
 
 typedef struct SnippetBlock

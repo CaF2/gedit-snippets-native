@@ -73,7 +73,7 @@ static SnippetBlock *get_or_create_block(size_t str_len)
 	return new_block;
 }
 
-static void process_snippet(xmlNode *node, GStrv programming_languages)
+static void process_snippet(xmlNode *node, const char *filename, GStrv programming_languages)
 {
 	g_autofree char *tag = NULL;
 	g_autofree char *text = NULL;
@@ -105,6 +105,7 @@ static void process_snippet(xmlNode *node, GStrv programming_languages)
 		{
 			g_ptr_array_add(entry->programming_languages,g_strdup(programming_languages[i]));
 		}
+		entry->filename=g_strdup(filename);
 		
 		//printf("FROM: %s %s\n",entry->from,entry->to);
 		g_ptr_array_add(block->nodes, entry);
@@ -121,7 +122,7 @@ static void parse_snippet_file(const char *filepath, GStrv programming_languages
 	for (xmlNode *node = root->children; node; node = node->next)
 	{
 		if (node->type == XML_ELEMENT_NODE && g_strcmp0((const char *)node->name, "snippet") == 0)
-			process_snippet(node,programming_languages);
+			process_snippet(node,filepath,programming_languages);
 	}
 
 	xmlFreeDoc(doc);
