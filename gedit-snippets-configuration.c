@@ -28,10 +28,6 @@ freely, subject to the following restrictions:
 
 GPtrArray *GLOBAL_SNIPPETS = NULL;
 
-static void parse_snippet_file(const char *filepath);
-static void process_snippet(xmlNode *node);
-static SnippetBlock *get_or_create_block(size_t str_len);
-
 static gint sort_snippet_block(gconstpointer a, gconstpointer b)
 {
   const SnippetBlock *entry1 = *((SnippetBlock **) a);
@@ -40,65 +36,44 @@ static gint sort_snippet_block(gconstpointer a, gconstpointer b)
   return entry2->str_len-entry1->str_len;
 }
 
-int load_configuration()
+const char *get_programming_language(GeditWindow *window)
 {
-	GLOBAL_SNIPPETS = g_ptr_array_new_with_free_func((GDestroyNotify)g_free);
+	GeditTab *tab= gedit_window_get_active_tab(window);
 	
-	g_autofree char *home_config_dir=g_build_filename(g_get_home_dir(), ".config/gedit/snippets/", NULL);
-	
-	char *dirs[] = {
-		home_config_dir,
-		"/usr/share/gedit/plugins/snippets/",
-		"/usr/local/share/gedit/plugins/snippets/"
-	};
-	
-	for (size_t i = 0; i < G_N_ELEMENTS(dirs); i++)
+	if(tab)
 	{
-		GError *error=NULL;
-		GDir *dir = g_dir_open(dirs[i], 0, &error);
-		//printf("DIR: %s %p\n",dirs[i],dir);
-		if (!dir)
+		GeditDocument *doc = gedit_tab_get_document(tab);
+	
+		GtkTextBuffer *buffer = GTK_TEXT_BUFFER(doc);
+		GtkSourceBuffer *sbuffer = GTK_SOURCE_BUFFER(buffer);
+		GtkSourceLanguage *language = gtk_source_buffer_get_language(sbuffer);
+		if (language)
 		{
-			//printf("DIR error: %s\n",error->message);
-			continue;
+			return gtk_source_language_get_id(language);
 		}
-
-		const gchar *filename;
-		while ((filename = g_dir_read_name(dir)))
-		{
-			//printf("READ: %s\n",filename);
-			if (g_str_has_suffix(filename, ".xml"))
-			{
-				char *filepath = g_build_filename(dirs[i], filename, NULL);
-				parse_snippet_file(filepath);
-				g_free(filepath);
-			}
-		}
-		g_dir_close(dir);
 	}
-
-	g_ptr_array_sort(GLOBAL_SNIPPETS,sort_snippet_block);
-
-	return 0;
+	
+	return NULL;
 }
 
-static void parse_snippet_file(const char *filepath)
+static SnippetBlock *get_or_create_block(size_t str_len)
 {
-	xmlDoc *doc = xmlReadFile(filepath, NULL, 0);
-	if (!doc)
-		return;
-
-	xmlNode *root = xmlDocGetRootElement(doc);
-	for (xmlNode *node = root->children; node; node = node->next)
+	for (guint i = 0; i < GLOBAL_SNIPPETS->len; i++)
 	{
-		if (node->type == XML_ELEMENT_NODE && g_strcmp0((const char *)node->name, "snippet") == 0)
-			process_snippet(node);
+		SnippetBlock *block = g_ptr_array_index(GLOBAL_SNIPPETS, i);
+		if (block->str_len == str_len)
+			return block;
 	}
 
-	xmlFreeDoc(doc);
+	SnippetBlock *new_block = g_malloc(sizeof(SnippetBlock));
+	new_block->str_len = str_len;
+	new_block->nodes = g_ptr_array_new_with_free_func((GDestroyNotify)g_free);
+	g_ptr_array_add(GLOBAL_SNIPPETS, new_block);
+
+	return new_block;
 }
 
-static void process_snippet(xmlNode *node)
+static void process_snippet(xmlNode *node, GStrv programming_languages)
 {
 	g_autofree char *tag = NULL;
 	g_autofree char *text = NULL;
@@ -125,25 +100,76 @@ static void process_snippet(xmlNode *node)
 		SnippetTranslation *entry = g_malloc(sizeof(SnippetTranslation));
 		entry->from = g_steal_pointer(&tag);
 		entry->to = g_steal_pointer(&text);
+		entry->programming_languages = g_ptr_array_new_with_free_func(g_free);
+		for (gint i = 0; programming_languages[i] != NULL; i++)
+		{
+			g_ptr_array_add(entry->programming_languages,g_strdup(programming_languages[i]));
+		}
+		
 		//printf("FROM: %s %s\n",entry->from,entry->to);
 		g_ptr_array_add(block->nodes, entry);
 	}
 }
 
-static SnippetBlock *get_or_create_block(size_t str_len)
+static void parse_snippet_file(const char *filepath, GStrv programming_languages)
 {
-	for (guint i = 0; i < GLOBAL_SNIPPETS->len; i++)
+	xmlDoc *doc = xmlReadFile(filepath, NULL, 0);
+	if (!doc)
+		return;
+
+	xmlNode *root = xmlDocGetRootElement(doc);
+	for (xmlNode *node = root->children; node; node = node->next)
 	{
-		SnippetBlock *block = g_ptr_array_index(GLOBAL_SNIPPETS, i);
-		if (block->str_len == str_len)
-			return block;
+		if (node->type == XML_ELEMENT_NODE && g_strcmp0((const char *)node->name, "snippet") == 0)
+			process_snippet(node,programming_languages);
 	}
 
-	SnippetBlock *new_block = g_malloc(sizeof(SnippetBlock));
-	new_block->str_len = str_len;
-	new_block->nodes = g_ptr_array_new_with_free_func((GDestroyNotify)g_free);
-	g_ptr_array_add(GLOBAL_SNIPPETS, new_block);
+	xmlFreeDoc(doc);
+}
 
-	return new_block;
+int load_configuration()
+{
+	GLOBAL_SNIPPETS = g_ptr_array_new_with_free_func((GDestroyNotify)g_free);
+	
+	g_autofree char *home_config_dir=g_build_filename(g_get_home_dir(), ".config/gedit/snippets/", NULL);
+	
+	char *dirs[] = {
+		home_config_dir,
+		"/usr/share/gedit/plugins/snippets/",
+		"/usr/local/share/gedit/plugins/snippets/"
+	};
+	
+	const char *const file_suffix=".xml";
+	const size_t file_suffix_len=strlen(file_suffix);
+	
+	for (size_t i = 0; i < G_N_ELEMENTS(dirs); i++)
+	{
+		g_autoptr(GError) error=NULL;
+		g_autoptr(GDir) dir = g_dir_open(dirs[i], 0, &error);
+		if (!dir)
+		{
+			//printf("DIR error: %s\n",error->message);
+			continue;
+		}
+
+		const gchar *filename;
+		while ((filename = g_dir_read_name(dir)))
+		{
+			//printf("READ: %s\n",filename);
+			if (g_str_has_suffix(filename, file_suffix))
+			{
+				gsize len = strlen(filename) - file_suffix_len;
+				g_autofree char *file_language_name=g_strndup(filename, len);
+				
+				g_auto(GStrv) possible_languages=g_strsplit(file_language_name,"_",-1);
+				g_autofree char *filepath = g_build_filename(dirs[i], filename, NULL);
+				parse_snippet_file(filepath,possible_languages);
+			}
+		}
+	}
+
+	g_ptr_array_sort(GLOBAL_SNIPPETS,sort_snippet_block);
+
+	return 0;
 }
 

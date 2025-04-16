@@ -20,6 +20,7 @@ freely, subject to the following restrictions:
 #pragma once
 
 #include <glib.h>
+#include <gedit/gedit-window.h>
 
 G_BEGIN_DECLS
 
@@ -27,6 +28,7 @@ typedef struct SnippetTranslation
 {
 	char *from;
 	char *to;
+	GPtrArray *programming_languages;
 }SnippetTranslation;
 
 typedef struct SnippetBlock
@@ -36,6 +38,7 @@ typedef struct SnippetBlock
 }SnippetBlock;
 
 int load_configuration();
+const char *get_programming_language(GeditWindow *window);
 
 extern GPtrArray *GLOBAL_SNIPPETS;
 

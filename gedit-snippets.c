@@ -58,26 +58,6 @@ G_DEFINE_DYNAMIC_TYPE_EXTENDED(GeditSnippetsPlugin, gedit_snippets_plugin, PEAS_
 
 //////////////////////////////////
 
-static int get_language_definitions(GtkTextBuffer *buffer, const char **block_language_start, 
-                                   const char **block_language_end, const char **line_language_start)
-{
-	GtkSourceBuffer *sbuffer = GTK_SOURCE_BUFFER(buffer);
-	GtkSourceLanguage *language = gtk_source_buffer_get_language(sbuffer);
-	if (buffer)
-	{
-		GtkTextIter iter;
-		GtkTextMark *mark = gtk_text_buffer_get_insert(buffer);
-		gtk_text_buffer_get_iter_at_mark(buffer, &iter, mark);
-		PangoLanguage *lang = gtk_text_iter_get_language(&iter);
-
-		(*block_language_start) = gtk_source_language_get_metadata(language, "block-language-start");
-		(*block_language_end) = gtk_source_language_get_metadata(language, "block-language-end");
-		(*line_language_start) = gtk_source_language_get_metadata(language, "line-language-start");
-
-		printf("LANG: %s [%s %s %s]\n", pango_language_to_string(lang), *block_language_start, *block_language_end, *line_language_start);
-	}
-}
-
 static void handle_first_insertion(GtkTextBuffer *buffer, GtkTextIter *start, const char *const insertion)
 {
 	GMatchInfo *match_info;
@@ -132,8 +112,27 @@ static void handle_first_insertion(GtkTextBuffer *buffer, GtkTextIter *start, co
 	gtk_text_buffer_insert(buffer, start, result, -1);
 }
 
+gboolean language_exists_in_obj(SnippetTranslation *self, const gchar *target)
+{
+	GPtrArray *const array=self->programming_languages;
+
+	for (guint i = 0; i < array->len; i++)
+	{
+		const gchar *item = g_ptr_array_index(array, i);
+		if (g_ascii_strcasecmp(item, target) == 0)
+		{
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
 static gboolean on_key_press_event(GtkWidget *widget, GdkEventKey *event, gpointer user_data)
 {
+	GeditSnippetsPlugin *const plugin=user_data;
+	
+	const char *const programming_language=get_programming_language(plugin->priv->window);
+	
 	if (event->keyval == GDK_KEY_Tab)
 	{
 		GeditView *view = GEDIT_VIEW(widget);
@@ -158,7 +157,7 @@ static gboolean on_key_press_event(GtkWidget *widget, GdkEventKey *event, gpoint
 				for(int j=0;j<sblk->nodes->len;j++)
 				{
 					SnippetTranslation *tmp=g_ptr_array_index(sblk->nodes,j);
-					if (g_strcmp0(word, tmp->from) == 0)
+					if (g_strcmp0(word, tmp->from) == 0 && language_exists_in_obj(tmp,programming_language))
 					{
 						/* Replace "std_head" with the snippet */
 						gtk_text_buffer_begin_user_action(buffer);
