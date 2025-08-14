@@ -24,16 +24,16 @@ NAME = libsnippets2
 
 ARGS =
 
-SRCS = gedit-snippets.c gedit-snippets-configure-window.c gedit-snippets-configuration.c
+SRCS = gedit-snippets.c gedit-snippets-configure-window.c gedit-snippets-configuration.c gedit-snippets-python-handling.c
 
 OBJS = $(SRCS:.c=.c.o)
 
 PKG_CONF = gedit
 
-CFLAGS = $(if $(PKG_CONF),$(shell pkg-config --cflags $(PKG_CONF))) -g -fPIC
+CFLAGS = $(if $(PKG_CONF),$(shell pkg-config --cflags $(PKG_CONF))) $(shell python3-config --cflags) -g -fPIC
 CFLAGS += -MMD -MP
 
-LDFLAGS = $(if $(PKG_CONF),$(shell pkg-config --libs $(PKG_CONF))) -shared
+LDFLAGS = $(if $(PKG_CONF),$(shell pkg-config --libs $(PKG_CONF))) $(shell python3-config --ldflags --embed) -shared
 
 #CFLAGS += $(if $(NO_ASAN),,-fsanitize=address)
 #LDFLAGS += $(if $(NO_ASAN),,-fsanitize=address)

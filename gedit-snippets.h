@@ -47,6 +47,12 @@ struct _GeditSnippetsPluginClass
     PeasExtensionBaseClass parent_class;
 };
 
+typedef struct Tab_position_object
+{
+	size_t in_blob, start, end, abs_start;
+	char *content;
+}Tab_position_object;
+
 GType gedit_snippets_plugin_get_type(void) G_GNUC_CONST;
 
 G_MODULE_EXPORT
