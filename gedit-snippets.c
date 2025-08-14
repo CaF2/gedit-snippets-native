@@ -74,7 +74,13 @@ static gint g_int_compare(gconstpointer a, gconstpointer b)
 {
 	int ia = GPOINTER_TO_INT(a);
 	int ib = GPOINTER_TO_INT(b);
-
+	
+	// Special case: 0 goes last
+	if (ia == 0 && ib != 0)
+		return 1;  // ia > ib
+	if (ib == 0 && ia != 0)
+		return -1; // ia < ib
+	
 	if (ia < ib)
 	{
 		return -1;
@@ -118,14 +124,62 @@ static void _tab_position_object_free(Tab_position_object *tpobj)
 
 int reset_globals()
 {
-	GLOBAL_SNIPPET_START_POS=0;
-	GLOBAL_SNIPPET_FILTERED_LEN=0;
-	GLOBAL_POSITION_STATE=0;
-	GLOBAL_EXPAND_INTERNAL_CODE=0;
-	GLOBAL_CURRENT_SNIPPET_TRANSLATION=NULL;
-	if(GLOBAL_POSITION_INFO_HASH_TABLE)
+	//dont free every time
+	if(GLOBAL_SNIPPET_FILTERED_LEN!=0)
 	{
-		g_hash_table_remove_all(GLOBAL_POSITION_INFO_HASH_TABLE);
+		GLOBAL_SNIPPET_START_POS=0;
+		GLOBAL_SNIPPET_FILTERED_LEN=0;
+		GLOBAL_POSITION_STATE=0;
+		GLOBAL_EXPAND_INTERNAL_CODE=0;
+		GLOBAL_CURRENT_SNIPPET_TRANSLATION=NULL;
+		if(GLOBAL_POSITION_INFO_HASH_TABLE)
+		{
+			g_hash_table_remove_all(GLOBAL_POSITION_INFO_HASH_TABLE);
+		}
+	}
+	
+	return 0;
+}
+
+int gstring_append_reformatted_dollar_string(GString *includes, const char *const dinsertion)
+{
+	g_autoptr(GMatchInfo) match_dollar_info=NULL;
+
+	//Analyze the input
+	if (g_regex_match(GLOBAL_REGEX_FIND_ONLY_DOLLAR_VARIABLES, dinsertion, 0, &match_dollar_info))
+	{
+		const char *dcursor = dinsertion;
+		while (g_match_info_matches(match_dollar_info))
+		{
+			g_autofree char *dmatch = g_match_info_fetch(match_dollar_info, 1);
+			gint dstart, dend;
+			g_match_info_fetch_pos(match_dollar_info, 0, &dstart, &dend);
+			
+			size_t dcursor_len=dstart - (dcursor - dinsertion);
+			
+			g_string_append_len(includes,dcursor,dcursor_len);
+			
+			long long did_num=g_ascii_strtoll(dmatch,NULL,10);
+			
+			if(did_num>0)
+			{
+				Tab_position_object *value = g_hash_table_lookup(GLOBAL_POSITION_INFO_HASH_TABLE, GINT_TO_POINTER(did_num));
+				
+				g_string_append(includes,"'");
+				g_string_append(includes,value->content);
+				g_string_append(includes,"'");
+			}
+			
+			dcursor = dinsertion + dend;
+			g_match_info_next(match_dollar_info, NULL);
+		}
+		
+		if (*dcursor)
+		{
+			g_string_append(includes,dcursor);
+		}
+		
+//		fprintf(stdout,"%s:%d INCLUDES [%s]\n",__FILE__,__LINE__,includes->str);
 	}
 	
 	return 0;
@@ -135,7 +189,7 @@ int finalize_fancy_snippet(GtkTextBuffer *buffer)
 {
 	g_autoptr(GMatchInfo) match_info=NULL;
 
-	fprintf(stdout,"%s:%d FINALIZE []\n",__FILE__,__LINE__);
+//	fprintf(stdout,"%s:%d FINALIZE []\n",__FILE__,__LINE__);
 	
 	const char *const insertion=GLOBAL_CURRENT_SNIPPET_TRANSLATION->to;
 	
@@ -155,10 +209,10 @@ int finalize_fancy_snippet(GtkTextBuffer *buffer)
 			size_t cursor_len=start - (cursor - insertion);
 			
 			// Print text before match
-			printf("Text: %.*s\n", (int)cursor_len, cursor);
+//			printf("Text: %.*s\n", (int)cursor_len, cursor);
 			g_string_append_len(result,cursor,cursor_len);
 			
-			printf("Match: %s\n",match);
+//			printf("Match: %s\n",match);
 			
 			//get the ids of all matches. This will focus on $123 and $<[123]: ... > ${123: ... }
 			if(match[0]=='$')
@@ -202,45 +256,7 @@ int finalize_fancy_snippet(GtkTextBuffer *buffer)
 						g_string_append_len(includes_tmp,match+2,match_len-3);
 						//g_string_append(includes_tmp,"\n");
 						
-						g_autoptr(GMatchInfo) match_dollar_info=NULL;
-						
-						const char *dinsertion=includes_tmp->str;
-						//Analyze the input
-						if (g_regex_match(GLOBAL_REGEX_FIND_ONLY_DOLLAR_VARIABLES, dinsertion, 0, &match_dollar_info))
-						{
-							const char *dcursor = dinsertion;
-							while (g_match_info_matches(match_dollar_info))
-							{
-								g_autofree char *dmatch = g_match_info_fetch(match_dollar_info, 1);
-								gint dstart, dend;
-								g_match_info_fetch_pos(match_dollar_info, 0, &dstart, &dend);
-								
-								size_t dcursor_len=dstart - (dcursor - dinsertion);
-								
-								g_string_append_len(includes,dcursor,dcursor_len);
-								
-								long long did_num=g_ascii_strtoll(dmatch,NULL,10);
-								
-								if(did_num>0)
-								{
-									Tab_position_object *value = g_hash_table_lookup(GLOBAL_POSITION_INFO_HASH_TABLE, GINT_TO_POINTER(did_num));
-									
-									g_string_append(includes,"'");
-									g_string_append(includes,value->content);
-									g_string_append(includes,"'");
-								}
-								
-								dcursor = dinsertion + dend;
-								g_match_info_next(match_dollar_info, NULL);
-							}
-							
-							if (*dcursor)
-							{
-								g_string_append(includes,dcursor);
-							}
-							
-							fprintf(stdout,"%s:%d INCLUDES [%s]\n",__FILE__,__LINE__,includes->str);
-						}
+						gstring_append_reformatted_dollar_string(includes,includes_tmp->str);
 					}
 				}
 				else if(match[1]=='{' && (match[2]>='0' && match[2]<='9'))
@@ -268,7 +284,7 @@ int finalize_fancy_snippet(GtkTextBuffer *buffer)
 		// Print remaining text after last match
 		if (*cursor)
 		{
-			printf("Text: %s\n", cursor);
+//			printf("Text: %s\n", cursor);
 			g_string_append(result,cursor);
 		}
 		
@@ -285,7 +301,7 @@ int finalize_fancy_snippet(GtkTextBuffer *buffer)
 			insertion_len+=strlen(iobj->content);
 		}
 		
-		fprintf(stdout,"%s:%d TOTAL RESULT= [%s] [%zu]\n",__FILE__,__LINE__,result->str,insertion_len);
+//		fprintf(stdout,"%s:%d TOTAL RESULT= [%s] [%zu]\n",__FILE__,__LINE__,result->str,insertion_len);
 		
 		gtk_text_buffer_begin_user_action(buffer);
 		
@@ -363,8 +379,8 @@ void move_cursor_n_chars(GtkTextBuffer *buffer, gint n)
 	gtk_text_buffer_place_cursor(buffer, &iter);
 
 	// Optional: scroll so it's visible
-	GtkTextMark *mark = gtk_text_buffer_get_insert(buffer);
-	gtk_text_view_scroll_mark_onscreen(GTK_TEXT_VIEW(gtk_text_buffer_get_tag_table(buffer)), mark);
+	//GtkTextMark *mark = gtk_text_buffer_get_insert(buffer);
+	//gtk_text_view_scroll_mark_onscreen(GTK_TEXT_VIEW(gtk_text_buffer_get_tag_table(buffer)), mark);
 }
 
 size_t get_position_relative_start(GtkTextBuffer *buffer)
@@ -377,6 +393,13 @@ size_t get_position_relative_start(GtkTextBuffer *buffer)
 	return gtk_text_iter_get_offset(&iter);
 }
 
+/**
+	1. Add output as blob (no data). but remember the position of all first positions of the ids
+	2. Move cursor to the first position in the blob. Add a state for next tabbing (maybe add some special color to know that we are in a special state). 
+	   If clicking somewhere, simply cancel everything.
+	3. After typing text and press tab. Store the typed text in the ids struct. Move to the next id. If last id is typed, now parse all the text again and insert.
+	   this step will most likely need some basic python pre-processing
+*/
 static int handle_first_insertion(GtkTextBuffer *buffer, GtkTextIter *start, SnippetTranslation *sntran)
 {
 	GMatchInfo *match_info;
@@ -411,8 +434,8 @@ static int handle_first_insertion(GtkTextBuffer *buffer, GtkTextIter *start, Sni
 			in_blob_pos+=cursor_len;
 			
 			// Print text before match
-			printf("Text: %.*s\n", (int)cursor_len, cursor);
-			printf("Match[%zu]: %s\n", in_blob_pos,match);
+//			printf("Text: %.*s\n", (int)cursor_len, cursor);
+//			printf("Match[%zu]: %s\n", in_blob_pos,match);
 			
 			//get the ids of all matches. This will focus on $123 and $<[123]: ... > ${123: ... }
 			if(match[0]=='$')
@@ -441,9 +464,9 @@ static int handle_first_insertion(GtkTextBuffer *buffer, GtkTextIter *start, Sni
 				{
 					long long id_num=g_ascii_strtoll(match+match_pos,NULL,10);
 					
-					if(id_num>0)
+//					if(id_num>0)
 					{
-						fprintf(stdout,"%s:%d ID [%lld] [%d]\n",__FILE__,__LINE__,id_num,match_pos);
+//						fprintf(stdout,"%s:%d ID [%lld] [%d]\n",__FILE__,__LINE__,id_num,match_pos);
 						
 						if(!g_hash_table_contains(GLOBAL_POSITION_INFO_HASH_TABLE,GINT_TO_POINTER(id_num)))
 						{
@@ -464,26 +487,17 @@ static int handle_first_insertion(GtkTextBuffer *buffer, GtkTextIter *start, Sni
 		}
 
 		// Print remaining text after last match
-		if (*cursor)
-		{
-			printf("Text: %s\n", cursor);
-		}
+//		if (*cursor)
+//		{
+//			printf("Text: %s\n", cursor);
+//		}
 	}
 	
 	Tab_position_object *first_id_obj=get_next_tab_position(GLOBAL_POSITION_INFO_HASH_TABLE,GLOBAL_POSITION_STATE);
 	
 	size_t GLOBAL_POSITION_INFO_HASH_TABLE_len=g_hash_table_size(GLOBAL_POSITION_INFO_HASH_TABLE);
 	
-	fprintf(stdout,"%s:%d NUMBER OF OBJECTS [%zu]\n",__FILE__,__LINE__,GLOBAL_POSITION_INFO_HASH_TABLE_len);
-	
-	/**
-	@TODO
-	1. Add output as blob (no data). but remember the position of all first positions of the ids
-	2. Move cursor to the first position in the blob. Add a state for next tabbing (maybe add some special color to know that we are in a special state). 
-	   If clicking somewhere, simply cancel everything.
-	3. After typing text and press tab. Store the typed text in the ids struct. Move to the next id. If last id is typed, now parse all the text again and insert.
-	   this step will most likely need some basic python pre-processing
-	*/
+//	fprintf(stdout,"%s:%d NUMBER OF OBJECTS [%zu]\n",__FILE__,__LINE__,GLOBAL_POSITION_INFO_HASH_TABLE_len);
 
 	g_match_info_free(match_info);
 	
@@ -494,7 +508,7 @@ static int handle_first_insertion(GtkTextBuffer *buffer, GtkTextIter *start, Sni
 	
 	GLOBAL_SNIPPET_FILTERED_LEN=strlen(result);
 	
-	fprintf(stdout,"%s:%d MOVE [%zu]\n",__FILE__,__LINE__,first_id_obj->in_blob);
+//	fprintf(stdout,"%s:%d MOVE [%zu]\n",__FILE__,__LINE__,first_id_obj->in_blob);
 	move_cursor_n_chars(buffer, -GLOBAL_SNIPPET_FILTERED_LEN+first_id_obj->in_blob);
 	
 	size_t current_abs_pos=get_position_relative_start(buffer);
@@ -504,7 +518,7 @@ static int handle_first_insertion(GtkTextBuffer *buffer, GtkTextIter *start, Sni
 	if((size_t)(GLOBAL_POSITION_STATE+1)<GLOBAL_POSITION_INFO_HASH_TABLE_len)
 	{
 		GLOBAL_POSITION_STATE++;
-		fprintf(stdout,"%s:%d INCREASED GLOBAL POSITION STATE [%d]\n",__FILE__,__LINE__,GLOBAL_POSITION_STATE);
+//		fprintf(stdout,"%s:%d INCREASED GLOBAL POSITION STATE [%d]\n",__FILE__,__LINE__,GLOBAL_POSITION_STATE);
 	}
 	
 	if((size_t)(GLOBAL_POSITION_STATE+1)==GLOBAL_POSITION_INFO_HASH_TABLE_len && GLOBAL_EXPAND_INTERNAL_CODE)
@@ -542,7 +556,7 @@ int set_content_from_now(GtkTextBuffer *buffer,Tab_position_object *prev_id_pos)
 
 	gchar *text_between = gtk_text_buffer_get_text(buffer, &start_iter, &end_iter, FALSE);
 
-	fprintf(stdout,"%s:%d Text Between [%s]\n",__FILE__,__LINE__,text_between);
+//	fprintf(stdout,"%s:%d Text Between [%s]\n",__FILE__,__LINE__,text_between);
 	
 	prev_id_pos->content=text_between;
 	
@@ -598,6 +612,11 @@ static gboolean on_key_press_event(GtkWidget *widget, GdkEventKey *event, gpoint
 							gtk_text_buffer_delete(buffer, &start, &iter);
 							int ret_result=handle_first_insertion(buffer, &start, tmp);
 							
+							if(ret_result!=0)
+							{
+								fprintf(stderr,"%s:%d Something went wrong to handle the first insertion.\n",__FILE__,__LINE__);
+							}
+							
 							gtk_text_buffer_end_user_action(buffer);
 							return TRUE;  // Stop event propagation
 						}
@@ -611,7 +630,7 @@ static gboolean on_key_press_event(GtkWidget *widget, GdkEventKey *event, gpoint
 				Tab_position_object *prev_id_pos=get_next_tab_position(GLOBAL_POSITION_INFO_HASH_TABLE,GLOBAL_POSITION_STATE-1);
 				Tab_position_object *curr_id_pos=get_next_tab_position(GLOBAL_POSITION_INFO_HASH_TABLE,GLOBAL_POSITION_STATE);
 				
-				const size_t current_relative_pos=get_position_relative_start(buffer);
+//				const size_t current_relative_pos=get_position_relative_start(buffer);
 				
 				set_content_from_now(buffer,prev_id_pos);
 				
@@ -621,7 +640,7 @@ static gboolean on_key_press_event(GtkWidget *widget, GdkEventKey *event, gpoint
 				
 				size_t GLOBAL_POSITION_INFO_HASH_TABLE_len=g_hash_table_size(GLOBAL_POSITION_INFO_HASH_TABLE);
 	
-				fprintf(stdout,"%s:%d NUMBER OF OBJECTS [%zu]\n",__FILE__,__LINE__,GLOBAL_POSITION_INFO_HASH_TABLE_len);
+//				fprintf(stdout,"%s:%d NUMBER OF OBJECTS [%zu]\n",__FILE__,__LINE__,GLOBAL_POSITION_INFO_HASH_TABLE_len);
 				
 				if((size_t)(GLOBAL_POSITION_STATE+1)==GLOBAL_POSITION_INFO_HASH_TABLE_len && GLOBAL_EXPAND_INTERNAL_CODE)
 				{
@@ -631,7 +650,7 @@ static gboolean on_key_press_event(GtkWidget *widget, GdkEventKey *event, gpoint
 				if((size_t)(GLOBAL_POSITION_STATE+1)<GLOBAL_POSITION_INFO_HASH_TABLE_len)
 				{
 					GLOBAL_POSITION_STATE++;
-					fprintf(stdout,"%s:%d INCREASED GLOBAL POSITION STATE [%d]\n",__FILE__,__LINE__,GLOBAL_POSITION_STATE);
+//					fprintf(stdout,"%s:%d INCREASED GLOBAL POSITION STATE [%d]\n",__FILE__,__LINE__,GLOBAL_POSITION_STATE);
 				}
 				else
 				{
@@ -653,7 +672,7 @@ static gboolean on_button_press_event(GtkWidget *widget, GdkEventButton *event, 
 
 	if (event->button == 1) // left click
 	{
-		g_print("Clicked at %.1f, %.1f in active document window\n",event->x, event->y);
+//		g_print("Clicked at %.1f, %.1f in active document window\n",event->x, event->y);
 
 		reset_globals();
 	}
