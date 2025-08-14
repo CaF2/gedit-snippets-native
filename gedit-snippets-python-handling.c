@@ -22,7 +22,7 @@ freely, subject to the following restrictions:
 #include "gedit-snippets.h"
 #include "gedit-snippets-python-handling.h"
 
-char *translate_python_block(const char *globals_code, const char *return_code, GHashTable *variable_definitions)
+char *translate_python_block(const char *globals_code, const char *return_code)
 {
 	// Wrap the return_code into a Python function
 	g_autofree char *wrapped_code=NULL;

@@ -24,6 +24,6 @@ freely, subject to the following restrictions:
 
 G_BEGIN_DECLS
 
-char *translate_python_block(const char *globals_code, const char *return_code, GHashTable *variable_definitions);
+char *translate_python_block(const char *globals_code, const char *return_code);
 
 G_END_DECLS

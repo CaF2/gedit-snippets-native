@@ -33,11 +33,15 @@ freely, subject to the following restrictions:
 #include "gedit-snippets-configuration.h"
 
 size_t GLOBAL_SNIPPET_START_POS=0;
+size_t GLOBAL_SNIPPET_FILTERED_LEN=0;
 GHashTable *GLOBAL_POSITION_INFO_HASH_TABLE=NULL;
-GRegex *GLOBAL_REGEX_FIND_VARIABLES=NULL;
 SnippetTranslation *GLOBAL_CURRENT_SNIPPET_TRANSLATION=NULL;
 int GLOBAL_POSITION_STATE=0;
 int GLOBAL_EXPAND_INTERNAL_CODE=0;
+
+//define once
+GRegex *GLOBAL_REGEX_FIND_VARIABLES=NULL;
+GRegex *GLOBAL_REGEX_FIND_ONLY_DOLLAR_VARIABLES=NULL;
 
 static void gedit_app_activatable_iface_init(GeditAppActivatableInterface *iface);
 static void gedit_window_activatable_iface_init(GeditWindowActivatableInterface *iface);
@@ -115,6 +119,7 @@ static void _tab_position_object_free(Tab_position_object *tpobj)
 int reset_globals()
 {
 	GLOBAL_SNIPPET_START_POS=0;
+	GLOBAL_SNIPPET_FILTERED_LEN=0;
 	GLOBAL_POSITION_STATE=0;
 	GLOBAL_EXPAND_INTERNAL_CODE=0;
 	GLOBAL_CURRENT_SNIPPET_TRANSLATION=NULL;
@@ -164,18 +169,83 @@ int finalize_fancy_snippet(GtkTextBuffer *buffer)
 				{
 					match_pos=1;
 				}
-				else if(match[1]=='<' && match[2]=='[' && (match[3]>='0' && match[3]<='9'))
+				else if(match[1]=='<')
 				{
-					match_pos=3;
+					//is return;
+					if(match[2]=='[')
+					{
+						const char *tmp=match+3;
+						while((*tmp)!=':' && (*tmp)!='\0')
+						{
+							tmp++;
+						}
+						
+						if((*tmp)!='\0')
+						{
+							tmp++;
+							const size_t tmp_len=strlen(tmp);
+						
+							g_autoptr(GString) return_res=g_string_sized_new(100);
+							g_string_append_len(return_res,tmp,tmp_len-1);
+							
+							g_autofree char *return_str=translate_python_block(includes->str,return_res->str);
+							
+							g_string_append(result,return_str);
+						}
+					}
+					//is include
+					else
+					{
+						const size_t match_len=strlen(match);
+						
+						g_autoptr(GString) includes_tmp=g_string_sized_new(100);
+						g_string_append_len(includes_tmp,match+2,match_len-3);
+						//g_string_append(includes_tmp,"\n");
+						
+						g_autoptr(GMatchInfo) match_dollar_info=NULL;
+						
+						const char *dinsertion=includes_tmp->str;
+						//Analyze the input
+						if (g_regex_match(GLOBAL_REGEX_FIND_ONLY_DOLLAR_VARIABLES, dinsertion, 0, &match_dollar_info))
+						{
+							const char *dcursor = dinsertion;
+							while (g_match_info_matches(match_dollar_info))
+							{
+								g_autofree char *dmatch = g_match_info_fetch(match_dollar_info, 1);
+								gint dstart, dend;
+								g_match_info_fetch_pos(match_dollar_info, 0, &dstart, &dend);
+								
+								size_t dcursor_len=dstart - (dcursor - dinsertion);
+								
+								g_string_append_len(includes,dcursor,dcursor_len);
+								
+								long long did_num=g_ascii_strtoll(dmatch,NULL,10);
+								
+								if(did_num>0)
+								{
+									Tab_position_object *value = g_hash_table_lookup(GLOBAL_POSITION_INFO_HASH_TABLE, GINT_TO_POINTER(did_num));
+									
+									g_string_append(includes,"'");
+									g_string_append(includes,value->content);
+									g_string_append(includes,"'");
+								}
+								
+								dcursor = dinsertion + dend;
+								g_match_info_next(match_dollar_info, NULL);
+							}
+							
+							if (*dcursor)
+							{
+								g_string_append(includes,dcursor);
+							}
+							
+							fprintf(stdout,"%s:%d INCLUDES [%s]\n",__FILE__,__LINE__,includes->str);
+						}
+					}
 				}
 				else if(match[1]=='{' && (match[2]>='0' && match[2]<='9'))
 				{
 					match_pos=2;
-				}
-				
-				if(match[1]=='<')
-				{
-					GLOBAL_EXPAND_INTERNAL_CODE=1;
 				}
 				
 				if(match_pos>=0)
@@ -191,7 +261,6 @@ int finalize_fancy_snippet(GtkTextBuffer *buffer)
 				}
 			}
 			
-			
 			cursor = insertion + end;
 			g_match_info_next(match_info, NULL);
 		}
@@ -203,7 +272,38 @@ int finalize_fancy_snippet(GtkTextBuffer *buffer)
 			g_string_append(result,cursor);
 		}
 		
-		fprintf(stdout,"%s:%d TOTAL RESULT= [%s]\n",__FILE__,__LINE__,result->str);
+		size_t insertion_len=GLOBAL_SNIPPET_FILTERED_LEN;
+		
+		GHashTableIter iter;
+		gpointer key, value;
+
+		g_hash_table_iter_init(&iter, GLOBAL_POSITION_INFO_HASH_TABLE);
+		while (g_hash_table_iter_next(&iter, &key, &value))
+		{
+			Tab_position_object *iobj = value;
+			
+			insertion_len+=strlen(iobj->content);
+		}
+		
+		fprintf(stdout,"%s:%d TOTAL RESULT= [%s] [%zu]\n",__FILE__,__LINE__,result->str,insertion_len);
+		
+		gtk_text_buffer_begin_user_action(buffer);
+		
+		GtkTextIter start_iter;
+
+		gtk_text_buffer_get_iter_at_offset(buffer, &start_iter, GLOBAL_SNIPPET_START_POS);
+		
+		GtkTextIter end_iter=start_iter;
+		
+		gtk_text_iter_forward_chars(&end_iter, insertion_len);
+		
+		// Remove the previous
+		gtk_text_buffer_delete(buffer, &start_iter, &end_iter);
+
+		// Now insert your new pythonized string
+		gtk_text_buffer_insert(buffer, &start_iter, result->str, -1);
+		
+		gtk_text_buffer_end_user_action(buffer);
 	}
 	
 	return 0;
@@ -222,6 +322,15 @@ int init_globals()
 		GLOBAL_REGEX_FIND_VARIABLES = g_regex_new(pattern, G_REGEX_EXTENDED, 0, &error);
 		
 		if (!GLOBAL_REGEX_FIND_VARIABLES)
+		{
+			fprintf(stderr, "Regex compilation failed: %s\n", error->message);
+			g_error_free(error);
+			return -1;
+		}
+		
+		GLOBAL_REGEX_FIND_ONLY_DOLLAR_VARIABLES = g_regex_new("\\$([0-9]+)", G_REGEX_EXTENDED, 0, &error);
+		
+		if (!GLOBAL_REGEX_FIND_ONLY_DOLLAR_VARIABLES)
 		{
 			fprintf(stderr, "Regex compilation failed: %s\n", error->message);
 			g_error_free(error);
@@ -383,8 +492,10 @@ static int handle_first_insertion(GtkTextBuffer *buffer, GtkTextIter *start, Sni
 	//current easy fix
 	gtk_text_buffer_insert(buffer, start, result, -1);
 	
+	GLOBAL_SNIPPET_FILTERED_LEN=strlen(result);
+	
 	fprintf(stdout,"%s:%d MOVE [%zu]\n",__FILE__,__LINE__,first_id_obj->in_blob);
-	move_cursor_n_chars(buffer, -strlen(result)+first_id_obj->in_blob);
+	move_cursor_n_chars(buffer, -GLOBAL_SNIPPET_FILTERED_LEN+first_id_obj->in_blob);
 	
 	size_t current_abs_pos=get_position_relative_start(buffer);
 	
