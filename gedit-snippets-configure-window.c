@@ -77,6 +77,99 @@ static void on_text_changed(GtkTextBuffer *buffer, gpointer user_data)
 	}
 }
 
+static void on_rename_snippet(GtkMenuItem *menuitem, gpointer user_data)
+{
+	SnippetDialogData *data = user_data;
+	GtkTreeSelection *selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(data->treeview));
+	GtkTreeModel *model;
+	GtkTreeIter iter;
+
+	if (gtk_tree_selection_get_selected(selection, &model, &iter))
+	{
+		gchar *current_name;
+		gtk_tree_model_get(model, &iter, 0, &current_name, -1);
+
+		GtkWidget *dialog = gtk_dialog_new_with_buttons(
+			"Rename Snippet",
+			GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(data->treeview))),
+			GTK_DIALOG_MODAL,
+			"_OK", GTK_RESPONSE_OK,
+			"_Cancel", GTK_RESPONSE_CANCEL,
+			NULL);
+
+		GtkWidget *entry = gtk_entry_new();
+		gtk_entry_set_text(GTK_ENTRY(entry), current_name);
+		gtk_container_add(GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), entry);
+		gtk_widget_show_all(dialog);
+
+		if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_OK)
+		{
+			const gchar *new_name = gtk_entry_get_text(GTK_ENTRY(entry));
+			gtk_list_store_set(data->store, &iter, 0, new_name, -1);
+		}
+
+		gtk_widget_destroy(dialog);
+		g_free(current_name);
+	}
+}
+
+static void on_save_snippet(GtkMenuItem *menuitem, gpointer user_data)
+{
+	SnippetDialogData *data = user_data;
+	GtkTreeSelection *selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(data->treeview));
+	GtkTreeModel *model;
+	GtkTreeIter iter;
+
+	if (gtk_tree_selection_get_selected(selection, &model, &iter))
+	{
+		gchar *name, *content;
+		gtk_tree_model_get(model, &iter, 0, &name, 1, &content, -1);
+
+		g_message("Saving snippet '%s' with content:\n%s", name, content);
+
+		g_free(name);
+		g_free(content);
+	}
+}
+
+static gboolean on_treeview_button_press(GtkWidget *widget, GdkEventButton *event, gpointer user_data)
+{
+	if (event->type == GDK_BUTTON_PRESS && event->button == 3) // Right click
+	{
+		GtkTreeView *treeview = GTK_TREE_VIEW(widget);
+		GtkTreeSelection *selection = gtk_tree_view_get_selection(treeview);
+		GtkTreePath *path;
+
+		// Find which row was clicked
+		if (gtk_tree_view_get_path_at_pos(treeview,
+		                                  (gint)event->x, (gint)event->y,
+		                                  &path, NULL, NULL, NULL))
+		{
+			// Select that row
+			gtk_tree_selection_unselect_all(selection);
+			gtk_tree_selection_select_path(selection, path);
+			gtk_tree_path_free(path);
+		}
+
+		// Now build and show the menu
+		GtkWidget *menu = gtk_menu_new();
+		GtkWidget *rename_item = gtk_menu_item_new_with_label("Rename");
+		GtkWidget *save_item = gtk_menu_item_new_with_label("Save");
+
+		g_signal_connect(rename_item, "activate", G_CALLBACK(on_rename_snippet), user_data);
+		g_signal_connect(save_item, "activate", G_CALLBACK(on_save_snippet), user_data);
+
+		gtk_menu_shell_append(GTK_MENU_SHELL(menu), rename_item);
+		gtk_menu_shell_append(GTK_MENU_SHELL(menu), save_item);
+		gtk_widget_show_all(menu);
+
+		gtk_menu_popup_at_pointer(GTK_MENU(menu), (GdkEvent *)event);
+
+		return TRUE; // Event handled
+	}
+	return FALSE;
+}
+
 void create_snippet_dialog(GtkWidget *parent)
 {
 	GtkWidget *dialog, *content_area, *treeview, *textview, *scrolled_window, *hbox, *vbox, *button_add, *button_remove;
@@ -104,6 +197,7 @@ void create_snippet_dialog(GtkWidget *parent)
 
 	// TreeView
 	treeview = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
+	g_signal_connect(treeview, "button-press-event", G_CALLBACK(on_treeview_button_press), data);
 	data->treeview = treeview;
 
 	renderer = gtk_cell_renderer_text_new();

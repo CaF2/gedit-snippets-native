@@ -212,7 +212,7 @@ int finalize_fancy_snippet(GtkTextBuffer *buffer)
 //			printf("Text: %.*s\n", (int)cursor_len, cursor);
 			g_string_append_len(result,cursor,cursor_len);
 			
-			printf("Match: %s\n",match);
+//			printf("Match: %s\n",match);
 			
 			//get the ids of all matches. This will focus on $123 and $<[123]: ... > ${123: ... }
 			if(match[0]=='$')
