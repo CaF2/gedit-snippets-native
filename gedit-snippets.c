@@ -161,10 +161,10 @@ int gstring_append_reformatted_dollar_string(GString *includes, const char *cons
 			
 			long long did_num=g_ascii_strtoll(dmatch,NULL,10);
 			
-			if(did_num>0)
+			Tab_position_object *value = g_hash_table_lookup(GLOBAL_POSITION_INFO_HASH_TABLE, GINT_TO_POINTER(did_num));
+			
+			if(value)
 			{
-				Tab_position_object *value = g_hash_table_lookup(GLOBAL_POSITION_INFO_HASH_TABLE, GINT_TO_POINTER(did_num));
-				
 				g_string_append(includes,"'");
 				g_string_append(includes,value->content);
 				g_string_append(includes,"'");
@@ -212,16 +212,21 @@ int finalize_fancy_snippet(GtkTextBuffer *buffer)
 //			printf("Text: %.*s\n", (int)cursor_len, cursor);
 			g_string_append_len(result,cursor,cursor_len);
 			
-//			printf("Match: %s\n",match);
+			printf("Match: %s\n",match);
 			
 			//get the ids of all matches. This will focus on $123 and $<[123]: ... > ${123: ... }
 			if(match[0]=='$')
 			{
-				int match_pos=-1;
-			
 				if(match[1]>='0' && match[1]<='9')
 				{
-					match_pos=1;
+					long long id_num=g_ascii_strtoll(match+1,NULL,10);
+					
+					Tab_position_object *value = g_hash_table_lookup(GLOBAL_POSITION_INFO_HASH_TABLE, GINT_TO_POINTER(id_num));
+					
+					if(value)
+					{
+						g_string_append(result,value->content);
+					}
 				}
 				else if(match[1]=='<')
 				{
@@ -261,18 +266,33 @@ int finalize_fancy_snippet(GtkTextBuffer *buffer)
 				}
 				else if(match[1]=='{' && (match[2]>='0' && match[2]<='9'))
 				{
-					match_pos=2;
-				}
+					long long id_num=g_ascii_strtoll(match+2,NULL,10);
 				
-				if(match_pos>=0)
-				{
-					long long id_num=g_ascii_strtoll(match+match_pos,NULL,10);
+					Tab_position_object *value = g_hash_table_lookup(GLOBAL_POSITION_INFO_HASH_TABLE, GINT_TO_POINTER(id_num));
 					
-					if(id_num>0)
+					if(value)
 					{
-						Tab_position_object *value = g_hash_table_lookup(GLOBAL_POSITION_INFO_HASH_TABLE, GINT_TO_POINTER(id_num));
+						//fprintf(stdout,"%s:%d STRLEN: [%zu]\n",__FILE__,__LINE__,strlen(value->content));
+					
+						if(value->content && strlen(value->content)>0)
+						{
+							g_string_append(result,value->content);
+						}
+						else
+						{
+							const char *tmp=match+2;
+							while((*tmp)!=':' && (*tmp)!='\0')
+							{
+								tmp++;
+							}
 						
-						g_string_append(result,value->content);
+							if((*tmp)!='\0')
+							{
+								tmp++;
+							
+								g_string_append_len(result,tmp,strlen(tmp)-1);
+							}
+						}
 					}
 				}
 			}
@@ -455,8 +475,9 @@ static int handle_first_insertion(GtkTextBuffer *buffer, GtkTextIter *start, Sni
 					match_pos=2;
 				}
 				
-				if(match[1]=='<')
+				if(match[1]=='<' || match[1]=='{')
 				{
+//					fprintf(stdout,"%s:%d EXP []\n",__FILE__,__LINE__);
 					GLOBAL_EXPAND_INTERNAL_CODE=1;
 				}
 				
@@ -464,19 +485,14 @@ static int handle_first_insertion(GtkTextBuffer *buffer, GtkTextIter *start, Sni
 				{
 					long long id_num=g_ascii_strtoll(match+match_pos,NULL,10);
 					
-//					if(id_num>0)
+					if(!g_hash_table_contains(GLOBAL_POSITION_INFO_HASH_TABLE,GINT_TO_POINTER(id_num)))
 					{
-//						fprintf(stdout,"%s:%d ID [%lld] [%d]\n",__FILE__,__LINE__,id_num,match_pos);
+						Tab_position_object *iobj = g_new0(Tab_position_object, 1);
+						iobj->in_blob=in_blob_pos;
+						iobj->start=start;
+						iobj->end=end;
 						
-						if(!g_hash_table_contains(GLOBAL_POSITION_INFO_HASH_TABLE,GINT_TO_POINTER(id_num)))
-						{
-							Tab_position_object *iobj = g_new0(Tab_position_object, 1);
-							iobj->in_blob=in_blob_pos;
-							iobj->start=start;
-							iobj->end=end;
-							
-							g_hash_table_insert(GLOBAL_POSITION_INFO_HASH_TABLE,GINT_TO_POINTER(id_num),iobj);
-						}
+						g_hash_table_insert(GLOBAL_POSITION_INFO_HASH_TABLE,GINT_TO_POINTER(id_num),iobj);
 					}
 				}
 			}
@@ -515,15 +531,15 @@ static int handle_first_insertion(GtkTextBuffer *buffer, GtkTextIter *start, Sni
 	
 	first_id_obj->abs_start=current_abs_pos;
 	
+	if((size_t)(GLOBAL_POSITION_STATE+1)==GLOBAL_POSITION_INFO_HASH_TABLE_len && GLOBAL_EXPAND_INTERNAL_CODE)
+	{
+		GLOBAL_EXPAND_INTERNAL_CODE=2;
+	}
+	
 	if((size_t)(GLOBAL_POSITION_STATE+1)<GLOBAL_POSITION_INFO_HASH_TABLE_len)
 	{
 		GLOBAL_POSITION_STATE++;
 //		fprintf(stdout,"%s:%d INCREASED GLOBAL POSITION STATE [%d]\n",__FILE__,__LINE__,GLOBAL_POSITION_STATE);
-	}
-	
-	if((size_t)(GLOBAL_POSITION_STATE+1)==GLOBAL_POSITION_INFO_HASH_TABLE_len && GLOBAL_EXPAND_INTERNAL_CODE)
-	{
-		GLOBAL_EXPAND_INTERNAL_CODE=2;
 	}
 	
 	return 0;
@@ -640,7 +656,8 @@ static gboolean on_key_press_event(GtkWidget *widget, GdkEventKey *event, gpoint
 				
 				size_t GLOBAL_POSITION_INFO_HASH_TABLE_len=g_hash_table_size(GLOBAL_POSITION_INFO_HASH_TABLE);
 	
-//				fprintf(stdout,"%s:%d NUMBER OF OBJECTS [%zu]\n",__FILE__,__LINE__,GLOBAL_POSITION_INFO_HASH_TABLE_len);
+//				fprintf(stdout,"%s:%d NUMBER OF OBJECTS [%zu] [%d %d]\n",__FILE__,__LINE__,GLOBAL_POSITION_INFO_HASH_TABLE_len,
+//					GLOBAL_POSITION_STATE,GLOBAL_EXPAND_INTERNAL_CODE);
 				
 				if((size_t)(GLOBAL_POSITION_STATE+1)==GLOBAL_POSITION_INFO_HASH_TABLE_len && GLOBAL_EXPAND_INTERNAL_CODE)
 				{
@@ -652,7 +669,7 @@ static gboolean on_key_press_event(GtkWidget *widget, GdkEventKey *event, gpoint
 					GLOBAL_POSITION_STATE++;
 //					fprintf(stdout,"%s:%d INCREASED GLOBAL POSITION STATE [%d]\n",__FILE__,__LINE__,GLOBAL_POSITION_STATE);
 				}
-				else
+				else if(GLOBAL_EXPAND_INTERNAL_CODE!=2)
 				{
 					reset_globals();
 				}
