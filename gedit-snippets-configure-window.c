@@ -86,8 +86,8 @@ static void on_rename_snippet(GtkMenuItem *menuitem, gpointer user_data)
 
 	if (gtk_tree_selection_get_selected(selection, &model, &iter))
 	{
-		gchar *current_name;
-		gtk_tree_model_get(model, &iter, 0, &current_name, -1);
+		SnippetTranslation *current_snippet_translation;
+		gtk_tree_model_get(model, &iter, 2, &current_snippet_translation, -1);
 
 		GtkWidget *dialog = gtk_dialog_new_with_buttons(
 			"Rename Snippet",
@@ -96,10 +96,37 @@ static void on_rename_snippet(GtkMenuItem *menuitem, gpointer user_data)
 			"_OK", GTK_RESPONSE_OK,
 			"_Cancel", GTK_RESPONSE_CANCEL,
 			NULL);
-
+		
+		GtkWidget *name_label = gtk_label_new("name");
+		gtk_container_add(GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), name_label);
+		
 		GtkWidget *entry = gtk_entry_new();
-		gtk_entry_set_text(GTK_ENTRY(entry), current_name);
+		gtk_entry_set_text(GTK_ENTRY(entry), current_snippet_translation->from);
 		gtk_container_add(GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), entry);
+		
+		GtkWidget *language_label = gtk_label_new("language");
+		gtk_container_add(GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), language_label);
+		
+		g_autoptr(GString) label_string=g_string_sized_new(10);
+				
+		for(guint k=0;k<current_snippet_translation->programming_languages->len;k++)
+		{
+			const char *langauage=g_ptr_array_index(current_snippet_translation->programming_languages,k);
+			
+			g_string_append_printf(label_string,"%s%s",k==0?"":",",langauage);
+		}
+		
+		GtkWidget *language_entry = gtk_entry_new();
+		gtk_entry_set_text(GTK_ENTRY(language_entry), label_string->str);
+		gtk_container_add(GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), language_entry);
+		
+		GtkWidget *description_label = gtk_label_new("description");
+		gtk_container_add(GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), description_label);
+		
+		GtkWidget *description_entry = gtk_entry_new();
+		gtk_entry_set_text(GTK_ENTRY(description_entry), current_snippet_translation->description);
+		gtk_container_add(GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), description_entry);
+		
 		gtk_widget_show_all(dialog);
 
 		if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_OK)
@@ -109,7 +136,6 @@ static void on_rename_snippet(GtkMenuItem *menuitem, gpointer user_data)
 		}
 
 		gtk_widget_destroy(dialog);
-		g_free(current_name);
 	}
 }
 
@@ -153,7 +179,7 @@ static gboolean on_treeview_button_press(GtkWidget *widget, GdkEventButton *even
 
 		// Now build and show the menu
 		GtkWidget *menu = gtk_menu_new();
-		GtkWidget *rename_item = gtk_menu_item_new_with_label("Rename");
+		GtkWidget *rename_item = gtk_menu_item_new_with_label("Edit");
 		GtkWidget *save_item = gtk_menu_item_new_with_label("Save");
 
 		g_signal_connect(rename_item, "activate", G_CALLBACK(on_rename_snippet), user_data);
@@ -170,6 +196,23 @@ static gboolean on_treeview_button_press(GtkWidget *widget, GdkEventButton *even
 	return FALSE;
 }
 
+static void on_snippet_dialog_response(GtkDialog *dialog, gint response_id, gpointer user_data)
+{
+	switch (response_id)
+	{
+		case GTK_RESPONSE_APPLY:
+			g_message("Save pressed — save changes here");
+			// your save logic...
+			break;
+		case GTK_RESPONSE_CLOSE:
+		default:
+			g_message("Closing dialog");
+			gtk_widget_destroy(GTK_WIDGET(dialog));
+			break;
+	}
+}
+
+
 void create_snippet_dialog(GtkWidget *parent)
 {
 	GtkWidget *dialog, *content_area, *treeview, *textview, *scrolled_window, *hbox, *vbox, *button_add, *button_remove;
@@ -180,7 +223,7 @@ void create_snippet_dialog(GtkWidget *parent)
 	SnippetDialogData *data = g_new0(SnippetDialogData, 1);
 
 	dialog = gtk_dialog_new_with_buttons("Manage Snippets", GTK_WINDOW(parent), GTK_DIALOG_MODAL,
-	                                     "_Close", GTK_RESPONSE_CLOSE, NULL);
+	                                     "_Save", GTK_RESPONSE_APPLY,"_Close", GTK_RESPONSE_CLOSE, NULL);
 	content_area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
 
 	// Create a horizontal box to contain the treeview and textview
@@ -192,7 +235,7 @@ void create_snippet_dialog(GtkWidget *parent)
 	gtk_box_pack_start(GTK_BOX(hbox), vbox, FALSE, FALSE, 5);
 
 	// Snippet list store
-	store = gtk_list_store_new(2, G_TYPE_STRING, G_TYPE_STRING);
+	store = gtk_list_store_new(3, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_POINTER);
 	data->store = store;
 
 	// TreeView
@@ -224,28 +267,28 @@ void create_snippet_dialog(GtkWidget *parent)
 
 	if(GLOBAL_SNIPPETS)
 	{
-		for(int i=0;i<GLOBAL_SNIPPETS->len;i++)
+		for(guint i=0;i<GLOBAL_SNIPPETS->len;i++)
 		{
 			SnippetBlock *sblk=g_ptr_array_index(GLOBAL_SNIPPETS,i);
 			
-			for(int j=0;j<sblk->nodes->len;j++)
+			for(guint j=0;j<sblk->nodes->len;j++)
 			{
-				SnippetTranslation *tmp=g_ptr_array_index(sblk->nodes,j);
+				SnippetTranslation *snippet_translation=g_ptr_array_index(sblk->nodes,j);
 				
 				g_autoptr(GString) label_string=g_string_sized_new(10);
 				
-				for(int k=0;k<tmp->programming_languages->len;k++)
+				for(guint k=0;k<snippet_translation->programming_languages->len;k++)
 				{
-					const char *langauage=g_ptr_array_index(tmp->programming_languages,k);
+					const char *langauage=g_ptr_array_index(snippet_translation->programming_languages,k);
 					
 					g_string_append_printf(label_string,"%s%s",k==0?"":",",langauage);
 				}
 				
-				g_string_append_printf(label_string,": %s",tmp->from);
+				g_string_append_printf(label_string,": %s",snippet_translation->from);
 				
 				GtkTreeIter iter;
 				gtk_list_store_append(data->store, &iter);
-				gtk_list_store_set(data->store, &iter, 0, label_string->str, 1, tmp->to, -1);
+				gtk_list_store_set(data->store, &iter, 0, label_string->str, 1, snippet_translation->to, 2, snippet_translation, -1);
 			}
 		}
 	}
@@ -257,6 +300,6 @@ void create_snippet_dialog(GtkWidget *parent)
 	g_signal_connect(gtk_text_view_get_buffer(GTK_TEXT_VIEW(textview)), "changed", G_CALLBACK(on_text_changed), data);
 
 	gtk_widget_show_all(dialog);
-	g_signal_connect(dialog, "response", G_CALLBACK(gtk_widget_destroy), NULL);
+	g_signal_connect(dialog, "response", G_CALLBACK(on_snippet_dialog_response), NULL);
 }
 

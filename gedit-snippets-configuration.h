@@ -26,8 +26,9 @@ G_BEGIN_DECLS
 
 typedef struct SnippetTranslation
 {
-	char *from;
-	char *to;
+	char *from; ///< tag in the xml files
+	char *to; ///< text in the xml files
+	char *description; ///< optional description
 	GPtrArray *programming_languages;
 	char *filename;
 }SnippetTranslation;
@@ -38,6 +39,8 @@ typedef struct SnippetBlock
 	GPtrArray *nodes; ///< SnippetTranslation
 }SnippetBlock;
 
+int configuration_init();
+int configuration_finalize();
 int load_configuration();
 const char *get_programming_language(GeditWindow *window);
 

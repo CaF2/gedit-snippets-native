@@ -28,6 +28,18 @@ freely, subject to the following restrictions:
 
 GPtrArray *GLOBAL_SNIPPETS = NULL;
 
+void snippet_translation_free(SnippetTranslation *self)
+{
+	g_free(self->from);
+	g_free(self->to);
+	g_free(self->description);
+	g_free(self->filename);
+	
+	g_ptr_array_free(self->programming_languages,TRUE);
+
+	g_free(self);
+}
+
 static gint sort_snippet_block(gconstpointer a, gconstpointer b)
 {
   const SnippetBlock *entry1 = *((SnippetBlock **) a);
@@ -67,7 +79,7 @@ static SnippetBlock *get_or_create_block(size_t str_len)
 
 	SnippetBlock *new_block = g_malloc(sizeof(SnippetBlock));
 	new_block->str_len = str_len;
-	new_block->nodes = g_ptr_array_new_with_free_func((GDestroyNotify)g_free);
+	new_block->nodes = g_ptr_array_new_with_free_func((GDestroyNotify)snippet_translation_free);
 	g_ptr_array_add(GLOBAL_SNIPPETS, new_block);
 
 	return new_block;
@@ -77,6 +89,7 @@ static void process_snippet(xmlNode *node, const char *filename, GStrv programmi
 {
 	g_autofree char *tag = NULL;
 	g_autofree char *text = NULL;
+	g_autofree char *description = NULL;
 	
 	for (xmlNode *child = node->children; child; child = child->next)
 	{
@@ -90,16 +103,21 @@ static void process_snippet(xmlNode *node, const char *filename, GStrv programmi
 			{
 				text = (char *)xmlNodeGetContent(child);
 			}
+			else if (g_strcmp0((const char *)child->name, "description") == 0)
+			{
+				description = (char *)xmlNodeGetContent(child);
+			}
 		}
 	}
 
 	if (tag && text)
 	{
-		size_t str_len = strlen(tag);
-		SnippetBlock *block = get_or_create_block(str_len);
+		const size_t tag_len = strlen(tag);
+		SnippetBlock *block = get_or_create_block(tag_len);
 		SnippetTranslation *entry = g_malloc(sizeof(SnippetTranslation));
 		entry->from = g_steal_pointer(&tag);
 		entry->to = g_steal_pointer(&text);
+		entry->description = g_steal_pointer(&description);
 		entry->programming_languages = g_ptr_array_new_with_free_func(g_free);
 		for (gint i = 0; programming_languages[i] != NULL; i++)
 		{
@@ -128,10 +146,18 @@ static void parse_snippet_file(const char *filepath, GStrv programming_languages
 	xmlFreeDoc(doc);
 }
 
-int load_configuration()
+int configuration_init()
 {
 	GLOBAL_SNIPPETS = g_ptr_array_new_with_free_func((GDestroyNotify)g_free);
-	
+}
+
+int configuration_finalize()
+{
+	g_ptr_array_free(GLOBAL_SNIPPETS,TRUE);
+}
+
+int load_configuration()
+{
 	g_autofree char *home_config_dir=g_build_filename(g_get_home_dir(), ".config/gedit/snippets/", NULL);
 	
 	char *dirs[] = {

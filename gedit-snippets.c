@@ -850,6 +850,7 @@ static void gedit_snippets_plugin_class_init(GeditSnippetsPluginClass *klass)
 	object_class->set_property = gedit_snippets_plugin_set_property;
 	object_class->get_property = gedit_snippets_plugin_get_property;
 	
+	configuration_init();
 	load_configuration();
 
 	g_object_class_override_property(object_class, PROP_WINDOW, "window");
@@ -858,6 +859,10 @@ static void gedit_snippets_plugin_class_init(GeditSnippetsPluginClass *klass)
 
 static void gedit_snippets_plugin_class_finalize(GeditSnippetsPluginClass *klass)
 {
+	g_hash_table_destroy(GLOBAL_POSITION_INFO_HASH_TABLE);
+
+	configuration_finalize();
+
 	Py_FinalizeEx();
 }
 
