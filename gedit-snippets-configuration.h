@@ -21,8 +21,15 @@ freely, subject to the following restrictions:
 
 #include <glib.h>
 #include <gedit/gedit-window.h>
+#include <libxml/parser.h>
+#include <libxml/tree.h>
 
 G_BEGIN_DECLS
+
+typedef struct XmlFileInformation
+{
+	xmlDoc *doc;
+}XmlFileInformation;
 
 typedef struct SnippetTranslation
 {
@@ -31,6 +38,8 @@ typedef struct SnippetTranslation
 	char *description; ///< optional description
 	GPtrArray *programming_languages;
 	char *filename;
+	XmlFileInformation *fileinf;
+	xmlNode *child;
 }SnippetTranslation;
 
 typedef struct SnippetBlock
@@ -45,6 +54,8 @@ int load_configuration();
 const char *get_programming_language(GeditWindow *window);
 
 extern GPtrArray *GLOBAL_SNIPPETS;
+
+SnippetBlock *get_or_create_block(size_t str_len);
 
 //static SnippetBlock GLOBAL_SNIPPETS[]={
 //	{3,(SnippetTranslation[]){{"prl","fprintf(stdout,\"%s:%d \\n\",__FILE__,__LINE__,);"},{"err","fprintf(stderr,\"%s:%d \\n\",__FILE__,__LINE__,);"},{NULL,NULL}}},

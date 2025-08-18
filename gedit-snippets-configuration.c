@@ -18,15 +18,15 @@ freely, subject to the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 */
 #include <glib.h>
-#include <libxml/parser.h>
-#include <libxml/tree.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "gedit-snippets-configuration.h"
 
+//@TODO change to a trie and have a file-structure?
 GPtrArray *GLOBAL_SNIPPETS = NULL;
+GHashTable *GLOBAL_XML_FILE_INFO = NULL;
 
 void snippet_translation_free(SnippetTranslation *self)
 {
@@ -68,7 +68,7 @@ const char *get_programming_language(GeditWindow *window)
 	return NULL;
 }
 
-static SnippetBlock *get_or_create_block(size_t str_len)
+SnippetBlock *get_or_create_block(size_t str_len)
 {
 	for (guint i = 0; i < GLOBAL_SNIPPETS->len; i++)
 	{
@@ -85,11 +85,13 @@ static SnippetBlock *get_or_create_block(size_t str_len)
 	return new_block;
 }
 
-static void process_snippet(xmlNode *node, const char *filename, GStrv programming_languages)
+static void process_snippet(xmlNode *node, const char *filename, XmlFileInformation *fileinf, GStrv programming_languages)
 {
 	g_autofree char *tag = NULL;
 	g_autofree char *text = NULL;
 	g_autofree char *description = NULL;
+	
+	xmlNode *use_child=NULL;
 	
 	for (xmlNode *child = node->children; child; child = child->next)
 	{
@@ -98,14 +100,17 @@ static void process_snippet(xmlNode *node, const char *filename, GStrv programmi
 			if (g_strcmp0((const char *)child->name, "tag") == 0)
 			{
 				tag = (char *)xmlNodeGetContent(child);
+				use_child=child;
 			}
 			else if (g_strcmp0((const char *)child->name, "text") == 0)
 			{
 				text = (char *)xmlNodeGetContent(child);
+				use_child=child;
 			}
 			else if (g_strcmp0((const char *)child->name, "description") == 0)
 			{
 				description = (char *)xmlNodeGetContent(child);
+				use_child=child;
 			}
 		}
 	}
@@ -124,7 +129,8 @@ static void process_snippet(xmlNode *node, const char *filename, GStrv programmi
 			g_ptr_array_add(entry->programming_languages,g_strdup(programming_languages[i]));
 		}
 		entry->filename=g_strdup(filename);
-		
+		entry->fileinf=fileinf;
+		entry->child=use_child;
 		//printf("FROM: %s %s\n",entry->from,entry->to);
 		g_ptr_array_add(block->nodes, entry);
 	}
@@ -132,32 +138,64 @@ static void process_snippet(xmlNode *node, const char *filename, GStrv programmi
 
 static void parse_snippet_file(const char *filepath, GStrv programming_languages)
 {
+	XmlFileInformation *fileinf=NULL;
+
 	xmlDoc *doc = xmlReadFile(filepath, NULL, 0);
 	if (!doc)
+	{
 		return;
+	}
+	
+	if(!g_hash_table_contains(GLOBAL_XML_FILE_INFO,filepath))
+	{
+		fileinf = g_new0(XmlFileInformation,1);
+		fileinf->doc=doc;
+	
+		g_hash_table_insert(GLOBAL_XML_FILE_INFO,g_strdup(filepath),fileinf);
+	}
+	else
+	{
+		fileinf = g_hash_table_lookup(GLOBAL_XML_FILE_INFO,filepath);
+	}
 
 	xmlNode *root = xmlDocGetRootElement(doc);
 	for (xmlNode *node = root->children; node; node = node->next)
 	{
 		if (node->type == XML_ELEMENT_NODE && g_strcmp0((const char *)node->name, "snippet") == 0)
-			process_snippet(node,filepath,programming_languages);
+		{
+			process_snippet(node,filepath,fileinf,programming_languages);
+		}
 	}
+}
 
-	xmlFreeDoc(doc);
+static void _xml_file_information_free(XmlFileInformation *self)
+{
+	xmlFreeDoc(self->doc);
+	
+	free(self);
 }
 
 int configuration_init()
 {
 	GLOBAL_SNIPPETS = g_ptr_array_new_with_free_func((GDestroyNotify)g_free);
+	GLOBAL_XML_FILE_INFO = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, (GDestroyNotify)_xml_file_information_free);
+	
+	return 0;
 }
 
 int configuration_finalize()
 {
 	g_ptr_array_free(GLOBAL_SNIPPETS,TRUE);
+	g_hash_table_destroy(GLOBAL_XML_FILE_INFO);
+	
+	return 0;
 }
 
 int load_configuration()
 {
+	g_ptr_array_set_size(GLOBAL_SNIPPETS,0);
+	g_hash_table_remove_all(GLOBAL_XML_FILE_INFO);
+
 	g_autofree char *home_config_dir=g_build_filename(g_get_home_dir(), ".config/gedit/snippets/", NULL);
 	
 	char *dirs[] = {
