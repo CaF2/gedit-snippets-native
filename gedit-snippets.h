@@ -51,6 +51,7 @@ typedef struct Tab_position_object
 {
 	size_t in_blob, start, end, abs_start;
 	char *content;
+	size_t number_of_objects; ///< number of $i found
 }Tab_position_object;
 
 GType gedit_snippets_plugin_get_type(void) G_GNUC_CONST;

@@ -57,7 +57,30 @@ static void on_add_snippet(GtkButton *button, gpointer user_data)
 	SnippetDialogData *data = user_data;
 	GtkTreeIter iter;
 	gtk_list_store_append(data->store, &iter);
-	gtk_list_store_set(data->store, &iter, 0, "New Snippet", 1, NULL, -1);
+	
+	const char *new_snippet_text="NewSnippet";
+	const size_t new_snippet_text_len=strlen(new_snippet_text);
+	
+	const char *add_language="c";
+	
+	SnippetTranslation *new_snippet_translation=snippet_translation_new();
+	new_snippet_translation->from=g_strndup(new_snippet_text,new_snippet_text_len);
+	new_snippet_translation->to=g_strdup("//Your code here");
+	
+	//.config/gedit/snippets/c.xml
+	g_ptr_array_add(new_snippet_translation->programming_languages,g_strdup(add_language));
+	new_snippet_translation->description = g_strdup("Your description");
+	
+	SnippetBlock *block = get_or_create_block(new_snippet_text_len);
+	g_ptr_array_add(block->nodes,new_snippet_translation);
+	
+	fix_xml_file_from_snippet_translation(new_snippet_translation);
+	
+	save_snippet_translation(new_snippet_translation,1);
+	
+	g_autofree char *full_new_label=create_snippet_label(new_snippet_translation);
+	
+	gtk_list_store_set(data->store, &iter, 0, full_new_label, 1, new_snippet_translation, -1);
 }
 
 static void on_remove_snippet(GtkButton *button, gpointer user_data)
@@ -300,7 +323,10 @@ static void on_snippet_dialog_response(GtkDialog *dialog, gint response_id, gpoi
 				
 				g_message("Saving snippet '%s' with content:\n%s\n%s", name, current_snippet_translation->to,new_text);
 				
+				free(current_snippet_translation->to);
 				current_snippet_translation->to=g_steal_pointer(&new_text);
+				
+				save_snippet_translation(current_snippet_translation,1);
 			}
 			
 			// your save logic...

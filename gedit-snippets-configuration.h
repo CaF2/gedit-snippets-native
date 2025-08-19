@@ -29,6 +29,7 @@ G_BEGIN_DECLS
 typedef struct XmlFileInformation
 {
 	xmlDoc *doc;
+	char *filename;
 }XmlFileInformation;
 
 typedef struct SnippetTranslation
@@ -37,7 +38,6 @@ typedef struct SnippetTranslation
 	char *to; ///< text in the xml files
 	char *description; ///< optional description
 	GPtrArray *programming_languages;
-	char *filename;
 	XmlFileInformation *fileinf;
 	xmlNode *child;
 }SnippetTranslation;
@@ -48,12 +48,18 @@ typedef struct SnippetBlock
 	GPtrArray *nodes; ///< SnippetTranslation
 }SnippetBlock;
 
+SnippetTranslation *snippet_translation_new();
+
 int configuration_init();
 int configuration_finalize();
 int load_configuration();
 const char *get_programming_language(GeditWindow *window);
 
+int fix_xml_file_from_snippet_translation(SnippetTranslation *self);
+int save_snippet_translation(SnippetTranslation *self, int options);
+
 extern GPtrArray *GLOBAL_SNIPPETS;
+extern GHashTable *GLOBAL_XML_FILE_INFO;
 
 SnippetBlock *get_or_create_block(size_t str_len);
 

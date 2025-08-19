@@ -491,8 +491,20 @@ static int handle_first_insertion(GtkTextBuffer *buffer, GtkTextIter *start, Sni
 						iobj->in_blob=in_blob_pos;
 						iobj->start=start;
 						iobj->end=end;
+						iobj->number_of_objects=1;
 						
 						g_hash_table_insert(GLOBAL_POSITION_INFO_HASH_TABLE,GINT_TO_POINTER(id_num),iobj);
+					}
+					else
+					{
+						//more than one variable exists, need to expand
+						GLOBAL_EXPAND_INTERNAL_CODE=1;
+						
+						Tab_position_object *iobj = g_hash_table_lookup(GLOBAL_POSITION_INFO_HASH_TABLE,GINT_TO_POINTER(id_num));
+						if(iobj)
+						{
+							iobj->number_of_objects++;
+						}
 					}
 				}
 			}
@@ -509,7 +521,7 @@ static int handle_first_insertion(GtkTextBuffer *buffer, GtkTextIter *start, Sni
 //		}
 	}
 	
-	Tab_position_object *first_id_obj=get_next_tab_position(GLOBAL_POSITION_INFO_HASH_TABLE,GLOBAL_POSITION_STATE);
+	
 	
 	size_t GLOBAL_POSITION_INFO_HASH_TABLE_len=g_hash_table_size(GLOBAL_POSITION_INFO_HASH_TABLE);
 	
@@ -524,12 +536,17 @@ static int handle_first_insertion(GtkTextBuffer *buffer, GtkTextIter *start, Sni
 	
 	GLOBAL_SNIPPET_FILTERED_LEN=strlen(result);
 	
-//	fprintf(stdout,"%s:%d MOVE [%zu]\n",__FILE__,__LINE__,first_id_obj->in_blob);
-	move_cursor_n_chars(buffer, -GLOBAL_SNIPPET_FILTERED_LEN+first_id_obj->in_blob);
+	Tab_position_object *first_id_obj=get_next_tab_position(GLOBAL_POSITION_INFO_HASH_TABLE,GLOBAL_POSITION_STATE);
 	
-	size_t current_abs_pos=get_position_relative_start(buffer);
-	
-	first_id_obj->abs_start=current_abs_pos;
+	//if has $1 etc
+	if(first_id_obj)
+	{
+		move_cursor_n_chars(buffer, -GLOBAL_SNIPPET_FILTERED_LEN+first_id_obj->in_blob);
+		
+		size_t current_abs_pos=get_position_relative_start(buffer);
+		
+		first_id_obj->abs_start=current_abs_pos;
+	}
 	
 	if((size_t)(GLOBAL_POSITION_STATE+1)==GLOBAL_POSITION_INFO_HASH_TABLE_len && GLOBAL_EXPAND_INTERNAL_CODE)
 	{
