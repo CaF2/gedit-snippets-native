@@ -169,6 +169,19 @@ static void parse_snippet_file(const char *filepath, GStrv programming_languages
 	}
 }
 
+int save_xml_file_information(XmlFileInformation *self)
+{
+	// Save back to the same file
+	int rc = xmlSaveFormatFileEnc(self->filename, self->doc, "UTF-8", 1);
+	
+	if (rc == -1)
+	{
+		fprintf(stderr, "Failed to save XML\n");
+	}
+	
+	return 0;
+}
+
 int fix_xml_file_from_snippet_translation(SnippetTranslation *self)
 {
 	const char *langauage="c";
@@ -201,17 +214,43 @@ int fix_xml_file_from_snippet_translation(SnippetTranslation *self)
 		}
 	}
 	
+	//had previous child, remove
+	if(self->child)
+	{
+		xmlUnlinkNode(self->child);
+		xmlFreeNode(self->child);
+		
+		//save with removed information, the rest will be saved below
+		save_xml_file_information(self->fileinf);
+		
+		self->fileinf=NULL;
+	}
+	
 	//did not find the file
 	if(!self->fileinf)
 	{
-		XmlFileInformation *new_fileinf=g_new0(XmlFileInformation,1);
+		xmlDocPtr doc = NULL;
+		xmlNodePtr root = NULL;
+	
+		XmlFileInformation *new_fileinf=g_hash_table_lookup(GLOBAL_XML_FILE_INFO,preferred_file);
 		
-		new_fileinf->filename=g_steal_pointer(&preferred_file);
-		
-		xmlDocPtr doc = xmlNewDoc((const xmlChar*)"1.0");
-		xmlNodePtr root = xmlNewNode(NULL, (const xmlChar*)"snippets");
-		xmlNewProp(root, (const xmlChar*)"language", (const xmlChar*)langauage);
-		xmlDocSetRootElement(doc, root);
+		if(!new_fileinf)
+		{
+			new_fileinf=g_new0(XmlFileInformation,1);
+			
+			new_fileinf->filename=g_steal_pointer(&preferred_file);
+			
+			doc = xmlNewDoc((const xmlChar*)"1.0");
+			
+			xmlNodePtr root = xmlNewNode(NULL, (const xmlChar*)"snippets");
+			xmlNewProp(root, (const xmlChar*)"language", (const xmlChar*)langauage);
+			xmlDocSetRootElement(doc, root);
+		}
+		else
+		{
+			doc=new_fileinf->doc;
+			root=xmlDocGetRootElement(doc);
+		}
 
 		// <snippet>
 		xmlNodePtr snippet = xmlNewChild(root, NULL, (const xmlChar*)"snippet", NULL);
@@ -321,6 +360,8 @@ int save_snippet_translation(SnippetTranslation *self, int options)
 	g_print("DUMP: %s", (char *)xmlbuff);
 	
 	g_print("SAVE TO: %s", fileinf->filename);
+	
+	save_xml_file_information(fileinf);
 
 	return 0;
 }

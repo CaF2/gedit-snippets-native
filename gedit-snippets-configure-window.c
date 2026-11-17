@@ -76,7 +76,7 @@ static void on_add_snippet(GtkButton *button, gpointer user_data)
 	
 	fix_xml_file_from_snippet_translation(new_snippet_translation);
 	
-	save_snippet_translation(new_snippet_translation,1);
+	save_snippet_translation(new_snippet_translation,0);
 	
 	g_autofree char *full_new_label=create_snippet_label(new_snippet_translation);
 	
@@ -213,6 +213,8 @@ static void on_rename_snippet(GtkMenuItem *menuitem, gpointer user_data)
 				{
 					g_ptr_array_add(current_snippet_translation->programming_languages, *p);
 				}
+				
+				fix_xml_file_from_snippet_translation(current_snippet_translation);
 			}
 			
 			if(g_strcmp0(new_description,current_snippet_translation->description)!=0)
