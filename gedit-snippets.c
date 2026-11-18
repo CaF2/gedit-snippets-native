@@ -569,7 +569,7 @@ gboolean language_exists_in_obj(SnippetTranslation *self, const gchar *target)
 	for (guint i = 0; i < array->len; i++)
 	{
 		const gchar *item = g_ptr_array_index(array, i);
-		if (g_ascii_strcasecmp(item, target) == 0)
+		if (g_ascii_strcasecmp(item, target) == 0 || g_ascii_strcasecmp(item, "global") == 0)
 		{
 			return TRUE;
 		}
